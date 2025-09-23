@@ -1,8 +1,27 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const patchNotesContainer = document.querySelector('.note-container');
-    const newNoteButton = document.querySelector('.note-header button');
+    // 마크다운 파일을 불러와서 표시하는 함수
+    async function loadPatchNotesFromMarkdown() {
+        try {
+            const response = await fetch('patch_notes.md');
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const markdownText = await response.text();
+            const htmlContent = marked.parse(markdownText);
+            
+            // 기존 .note-container를 초기화하고 마크다운 내용을 HTML로 삽입
+            const patchNotesContainer = document.querySelector('.note-container');
+            patchNotesContainer.innerHTML = `<div id="patch-notes-content"></div>`;
+            document.getElementById('patch-notes-content').innerHTML = htmlContent;
 
-    // 패치 노트 아이템을 동적으로 생성하는 함수
+        } catch (error) {
+            console.error('Error fetching patch notes:', error);
+            const patchNotesContainer = document.querySelector('.note-container');
+            patchNotesContainer.innerHTML = '<p>패치 노트를 불러오는 데 실패했습니다.</p>';
+        }
+    }
+
+    // 패치 노트 아이템을 동적으로 생성하고 이벤트 리스너를 추가하는 함수
     function createNoteItem(title, content = '') {
         const noteItem = document.createElement('div');
         noteItem.classList.add('note-item');
@@ -17,46 +36,68 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `;
 
-        // 클릭 이벤트 리스너 추가
         noteItem.addEventListener('click', () => {
+            // 다른 노트 닫기
+            document.querySelectorAll('.note-content').forEach(note => {
+                if (note !== noteItem.querySelector('.note-content')) {
+                    note.style.display = 'none';
+                }
+            });
+
+            // 현재 노트 열기/닫기
+            const contentDiv = noteItem.querySelector('.note-content');
+            const editor = noteItem.querySelector('.note-editor');
+            const isVisible = contentDiv.style.display === 'block';
+            contentDiv.style.display = isVisible ? 'none' : 'block';
+            if (!isVisible) {
+                editor.focus();
+            }
+        });
+
+        // 저장 버튼 이벤트
+        noteItem.querySelector('.save-button').addEventListener('click', (e) => {
+            e.stopPropagation();
             const contentDiv = noteItem.querySelector('.note-content');
             const editor = noteItem.querySelector('.note-editor');
             const noteTitle = noteItem.querySelector('h4');
+            const newTitle = editor.value.split('\n')[0] || '제목 없음';
 
-            // 이미 열려있으면 닫기
-            if (contentDiv.style.display === 'block') {
-                contentDiv.style.display = 'none';
-                return;
+            if (noteTitle.textContent !== newTitle) {
+                localStorage.removeItem(noteTitle.textContent);
             }
+            noteTitle.textContent = newTitle;
+            localStorage.setItem(newTitle, editor.value);
+            contentDiv.style.display = 'none';
+        });
 
-            // 모든 노트 닫고 현재 노트 열기
-            document.querySelectorAll('.note-content').forEach(note => {
-                note.style.display = 'none';
-            });
-            contentDiv.style.display = 'block';
-            editor.focus();
-
-            // 저장 버튼
-            noteItem.querySelector('.save-button').onclick = (e) => {
-                e.stopPropagation(); // 이벤트 버블링 방지
-                contentDiv.style.display = 'none';
-                noteTitle.textContent = editor.value.split('\n')[0] || '제목 없음'; // 첫 줄을 제목으로
-                localStorage.setItem(noteTitle.textContent, editor.value);
-            };
-
-            // 취소 버튼
-            noteItem.querySelector('.cancel-button').onclick = (e) => {
-                e.stopPropagation(); // 이벤트 버블링 방지
-                contentDiv.style.display = 'none';
-                editor.value = localStorage.getItem(noteTitle.textContent) || ''; // 저장된 내용으로 복원
-            };
+        // 취소 버튼 이벤트
+        noteItem.querySelector('.cancel-button').addEventListener('click', (e) => {
+            e.stopPropagation();
+            const contentDiv = noteItem.querySelector('.note-content');
+            const editor = noteItem.querySelector('.note-editor');
+            contentDiv.style.display = 'none';
+            editor.value = localStorage.getItem(noteItem.querySelector('h4').textContent) || '';
         });
 
         return noteItem;
     }
 
-    // 로컬 스토리지에서 기존 데이터 불러오기
+    // 초기 로딩
+    const patchNotesContainer = document.querySelector('.note-container');
+    const newNoteButton = document.querySelector('.note-header button');
+
+    // 패치 노트 불러오기 옵션 선택
+    // loadPatchNotesFromMarkdown(); // .md 파일로 패치 노트를 관리하고 싶을 때 이 줄의 주석을 해제하세요.
+    loadSavedNotes(); // 로컬 스토리지로 패치 노트를 관리하고 싶을 때 이 줄의 주석을 해제하세요.
+
+    // 로컬 스토리지에서 저장된 노트 불러오기
     function loadSavedNotes() {
+        if (localStorage.length === 0) {
+            patchNotesContainer.innerHTML = '<p>저장된 패치 노트가 없습니다. "새로 만들기"를 클릭하여 작성하세요.</p>';
+            return;
+        }
+        
+        patchNotesContainer.innerHTML = ''; // 기존 HTML 내용 삭제
         for (let i = 0; i < localStorage.length; i++) {
             const key = localStorage.key(i);
             const content = localStorage.getItem(key);
@@ -67,67 +108,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // 새로 만들기 버튼 클릭 이벤트
-    newNoteButton.addEventListener('click', () => {
-        const newNoteTitle = prompt('새로운 패치 노트의 제목을 입력하세요:', '새로운 패치 노트');
-        if (newNoteTitle) {
-            const newNoteItem = createNoteItem(newNoteTitle);
-            patchNotesContainer.appendChild(newNoteItem);
-            localStorage.setItem(newNoteTitle, '');
-        }
-    });
-
-    // 초기 로딩 시 저장된 노트 불러오기
-    loadSavedNotes();
-
-    // 기존 노트 아이템에 이벤트 리스너 추가 (초기에 HTML에 작성된 노트)
-    document.querySelectorAll('.note-item').forEach(item => {
-        const title = item.querySelector('h4').textContent;
-        const content = localStorage.getItem(title) || '';
-        item.innerHTML = `
-            <h4>${title}</h4>
-            <div class="note-content" style="display: none;">
-                <textarea class="note-editor" placeholder="여기에 내용을 입력하세요.">${content}</textarea>
-                <div class="button-group">
-                    <button class="save-button">저장</button>
-                    <button class="cancel-button">취소</button>
-                </div>
-            </div>
-        `;
-        item.addEventListener('click', () => {
-            const contentDiv = item.querySelector('.note-content');
-            const editor = item.querySelector('.note-editor');
-            const noteTitle = item.querySelector('h4');
-            
-            if (contentDiv.style.display === 'block') {
-                contentDiv.style.display = 'none';
-                return;
+    // '새로 만들기' 버튼 클릭 이벤트
+    if (newNoteButton) {
+        newNoteButton.addEventListener('click', () => {
+            const newNoteTitle = prompt('새로운 패치 노트의 제목을 입력하세요:', `새로운 패치 노트 ${Date.now()}`);
+            if (newNoteTitle) {
+                const newNoteItem = createNoteItem(newNoteTitle, '');
+                patchNotesContainer.appendChild(newNoteItem);
+                localStorage.setItem(newNoteTitle, '');
+                
+                // 새로 생성된 노트 자동으로 열기
+                newNoteItem.querySelector('h4').click();
             }
-
-            document.querySelectorAll('.note-content').forEach(note => {
-                note.style.display = 'none';
-            });
-            contentDiv.style.display = 'block';
-            editor.focus();
-
-            item.querySelector('.save-button').onclick = (e) => {
-                e.stopPropagation();
-                contentDiv.style.display = 'none';
-                const newTitle = editor.value.split('\n')[0] || title;
-                if (newTitle !== title) {
-                    localStorage.removeItem(title);
-                    noteTitle.textContent = newTitle;
-                    localStorage.setItem(newTitle, editor.value);
-                } else {
-                    localStorage.setItem(newTitle, editor.value);
-                }
-            };
-
-            item.querySelector('.cancel-button').onclick = (e) => {
-                e.stopPropagation();
-                contentDiv.style.display = 'none';
-                editor.value = localStorage.getItem(title) || '';
-            };
         });
-    });
+    }
+    loadPatchNotesFromMarkdown();
 });
